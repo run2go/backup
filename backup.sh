@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Version 0.0.1
+# Version 0.0.2
 # Configuration Parameters
 MAIN_DIR="/home"
 DISCORD_USER_ID=123
 DISCORD_CHANNEL_ID=456
-DISCORD_TOKEN=fancy_DISCORD_TOKEN
+DISCORD_TOKEN=private_discord_token
 
 
 # Move to initial directory
