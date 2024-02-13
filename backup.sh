@@ -39,7 +39,7 @@ mv "$config_file.tmp" "$config_file"
 
 # Keep track of the overall item count
 current_entry=0
-max_entries=$(grep -c '^#' "$config_file")
+max_entries=$(grep -c --invert-match '^#' "$config_file")
 
 # Read the configuration file line by line (IFS = internal field separator)
 while IFS=: read -r name versions source target exclusions || [ -n "$name" ]; do
@@ -135,3 +135,4 @@ echo "Sending Discord Info";
 curl -H "Content-Type: application/json" -X POST -d '{
           "content": "***Info***: __'"$config_file"'__ backup finished, **'"$max_entries"'** entries in total processed."
           }' https://discord.com/api/webhooks/$DISCORD_CHANNEL_ID/$DISCORD_TOKEN
+          
