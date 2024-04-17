@@ -20,6 +20,7 @@ Excluding files and folders is optional and can be concatenated using ```,``` li
 
 ## Usage
 - Place the backup.sh script in a folder of your choice
+- Make it executable using `chmod +x backup.sh`
 - Create a *.conf file with your to be secured file & folders along with their destination folder IDs (GDrive)<br>
 - Execute the shell script using the *.conf file as parameter
 
