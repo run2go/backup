@@ -120,7 +120,7 @@ while IFS=: read -r name versions source target exclusions || [ -n "$name" ]; do
     # Error Discord Ping
     echo "Sending Discord Error";
     curl -H "Content-Type: application/json" -X POST -d '{
-            "content": "<@'$DISCORD_USER_ID'>",
+            "content": "***[Backup] Warning @'"$(hostname)"'*** - <@'$DISCORD_USER_ID'>",
             "embeds": [{
                 "title": "**'$current_entry'**/**'"$max_entries"'** failed",
                 "description": "**'"$name"'**: __**'"$source"'**__ not found.",
@@ -133,6 +133,6 @@ done < "$config_file"
 #Finished Discord Msg
 echo "Sending Discord Info";
 curl -H "Content-Type: application/json" -X POST -d '{
-          "content": "***Info***: __'"$config_file"'__ backup finished, **'"$max_entries"'** entries in total processed."
+          "content": "***[Backup] Info @'"$(hostname)"'***: __'"$config_file"'__ backup finished, **'"$max_entries"'** entries in total processed."
           }' https://discord.com/api/webhooks/$DISCORD_CHANNEL_ID/$DISCORD_TOKEN
           
