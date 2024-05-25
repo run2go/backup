@@ -1,20 +1,53 @@
 #!/bin/bash
 
-# Version 0.0.2
+Version=0.1.2
+Repo="https://raw.githubusercontent.com/run2go/backup/main/backup.sh"
+
 # Configuration Parameters
-MAIN_DIR="/home"
-DISCORD_USER_ID=123
-DISCORD_CHANNEL_ID=456
-DISCORD_TOKEN=private_discord_token
+UPDATE_AUTO=false
+UPDATE_NOTIFY=true
+WEBHOOK_REPORT=true
+WEBHOOK_URL="https://web.hook/"
+PING_TARGET="@here"
 
-
-# Move to initial directory
-cd $MAIN_DIR || exit
+# Initialize the variables to store the report messages
+backup_message=""
+backup_warn=""
+backup_update=""
+backup_num=0
 
 # Function to log messages with timestamps
 log_message() {
-  echo "$(date +'%Y-%m-%d %H:%M:%S') - $1"
+  echo "$(date +'%Y/%m/%d %H:%M:%S') $1" | tee -a $LOG_FILE
 }
+
+# Function to check for script updates
+check_for_updates() {
+  latest_script=$(curl -s $Repo)
+  latest_version=$(echo "$latest_script" | grep -oP 'Version=\K[0-9.]+')
+  
+  if [ -z "$latest_version" ]; then
+    log_message "Invalid remote version, check \"$(echo $Repo)\""
+    backup_update+="Notification $PING_TARGET: Invalid remote version, check \"$(echo $Repo)\"\n\n"
+  elif [[ $latest_version != $Version ]]; then
+    if $UPDATE_AUTO; then
+      log_message "Updating script to version $latest_version"
+      mv $0 ${0}.bk
+      echo "$latest_script" | sed "/# Configuration Parameters/aUPDATE_AUTO=$UPDATE_AUTO\nUPDATE_NOTIFY=$UPDATE_NOTIFY\nWEBHOOK_REPORT=$WEBHOOK_REPORT\nWEBHOOK_URL=\"$WEBHOOK_URL\"\nPING_TARGET=\"$PING_TARGET\"" > "$0"
+      chmod +x "$0"
+      exec $0 "$@"
+    fi
+    
+    if $UPDATE_NOTIFY; then
+      backup_update+="Notification $PING_TARGET: Backup Script updated to version **$latest_version**\n\n"
+    fi
+  fi
+}
+
+# Perform the update check if enabled
+if $UPDATE_AUTO || $UPDATE_NOTIFY; then
+  check_for_updates "$@"
+fi
 
 # Check if the configuration file is provided as an argument
 if [ $# -ne 1 ]; then
@@ -23,116 +56,96 @@ if [ $# -ne 1 ]; then
 fi
 
 # Check if the configuration file exists
-config_file="$1"
-if [ ! -f "$config_file" ]; then
-  log_message "Configuration file not found: $config_file"
+CONFIG_FILE="$1"
+if [ ! -f "$CONFIG_FILE" ]; then
+  log_message "Configuration file not found: $CONFIG_FILE"
   exit 1
 fi
 
 # Redirect echo output to the log file
-log_file="$config_file.log"
-exec > >(while read -r line; do log_message "$line"; done > "$log_file") 2>&1
+LOG_FILE="$CONFIG_FILE.log"
 
-# Remove carriage return characters (\r) to convert the file to Unix format
-tr -d '\r' < "$config_file" > "$config_file.tmp"
-mv "$config_file.tmp" "$config_file"
+# Clear logfile
+rm $LOG_FILE
+touch $LOG_FILE
 
-# Keep track of the overall item count
-current_entry=0
-max_entries=$(grep -c --invert-match '^#' "$config_file")
+# Read and process the configuration file
+while read -r item; do
+  # Parse JSON fields
+  title=$(echo "$item" | jq -r '.title // empty')
 
-# Read the configuration file line by line (IFS = internal field separator)
-while IFS=: read -r name versions source target exclusions || [ -n "$name" ]; do
-  # Skip lines starting with #
-  if [[ $name == \#* ]]; then
-      continue
+  # Skip entries without a title
+  if [ -z "$title" ]; then
+    continue
   fi
 
-  # Remove outer double quotes from folder paths using eval
-  source=$(eval echo "$source")
-  target=$(eval echo "$target")
-  exclusions=$(eval echo "$exclusions")
+  # Keep track of valid json entries
+  ((backup_num+=1))
 
-  # Print each output to the console instead of the log file
-  ((current_entry++))
-  echo "$current_entry/$max_entries started: $name"
+  source=$(echo "$item" | jq -r '.source')
+  target=$(echo "$item" | jq -r '.target')
+  excludes=$(echo "$item" | jq -r '.exclude // empty | .[]')
 
-  # Check if the source exists
-  if [ -e "$source" ]; then
-    # Create a temporary directory and copy the source to it
-    temp_dir=$(mktemp -d)
+  log_message "[$backup_num] Starting backup for $title"
 
-    # Split exclusions by comma while preserving quoted values
-    IFS=',' read -ra exclusion_dirs <<< "$exclusions"
+  # Prepare exclude options
+  exclude_options=""
+  for exclude in $excludes; do
+    exclude_options+="--exclude $exclude "
+  done
 
-    # Construct the --exclude parameters dynamically
-    excluded=()
-    for dir in "${exclusion_dirs[@]}"; do
-      # Trim leading/trailing whitespace
-      dir=$(echo "$dir" | sed -e 's/^ *//' -e 's/ *$//')
-      
-      # Check if the directory is not empty after trimming
-      if [ -n "$dir" ]; then
-        excluded+=("--exclude=$dir")
-      fi
-    done
-
-    echo "Excluded directories:"
-    for excl_dir in "${excluded[@]}"; do
-      echo "$excl_dir"
-    done
-
-    # Use rsync with the constructed --exclude parameters
-    rsync -a "${excluded[@]}" "$source/" "$temp_dir/"
-
-    # Create a zip file of the temporary directory
-    cd "$temp_dir" || exit
-    zip_file="$name.zip"
-    zip -r -q "$zip_file" .
-    cd - || exit
-
-    # Upload the new zip file to Google Drive using gdrive
-    /usr/local/bin/gdrive files upload "$temp_dir/$zip_file" --parent "$target"
-
-    # Get the list of files in the destination folder
-    file_list=$(/usr/local/bin/gdrive files list --parent "$target" | grep -w "$name")
-
-    # Check if there are more older versions than allowed
-    if [ "$(echo "$file_list" | wc -l)" -gt "$versions" ]; then
-      # Sort by created date and keep the oldest ones
-      delete_files=$(echo "$file_list" | tail -n +2 | sort -k 6 | head -n "-$versions" | awk '{print $1}')
-
-      # Delete the older versions
-      for file_delete in $delete_files; do
-        echo "Deleting older version: $file_delete"
-        /usr/local/bin/gdrive files delete --recursive "$file_delete"
-      done
-    fi
-
-    # Clean up the temporary directory and zip file
-    rm -rf "$temp_dir" "$zip_file"
-    
-    echo "$current_entry/$max_entries finished: $name";
-    echo "###";
+  # Check if the source is a file or directory
+  if [ -d "$source" ]; then
+    source_type="directory"
+  elif [ -f "$source" ]; then
+    source_type="file"
   else
-    echo "$current_entry/$max_entries failed: $name, '$source' not found.";
-    echo "###";
-    # Error Discord Ping
-    echo "Sending Discord Error";
-    curl -H "Content-Type: application/json" -X POST -d '{
-            "content": "***[Backup] Warning @'"$(hostname)"'*** - <@'$DISCORD_USER_ID'>",
-            "embeds": [{
-                "title": "**'$current_entry'**/**'"$max_entries"'** failed",
-                "description": "**'"$name"'**: __**'"$source"'**__ not found.",
-                "color": "16732439"
-                }]
-            }' https://discord.com/api/webhooks/$DISCORD_CHANNEL_ID/$DISCORD_TOKEN
+    log_message "[$backup_num] Warn: Source '$source' for $title not found or invalid"
+    backup_warn+="- **[$backup_num]** $title (Source not found: '$source')\n"
+    continue
   fi
-done < "$config_file"
 
-#Finished Discord Msg
-echo "Sending Discord Info";
-curl -H "Content-Type: application/json" -X POST -d '{
-          "content": "***[Backup] Info @'"$(hostname)"'***: __'"$config_file"'__ backup finished, **'"$max_entries"'** entries in total processed."
-          }' https://discord.com/api/webhooks/$DISCORD_CHANNEL_ID/$DISCORD_TOKEN
-          
+  # Perform the backup
+  if [ "$source_type" == "directory" ]; then
+    if ! rclone copy "$source" "$target" --verbose --log-file="$LOG_FILE" $exclude_options; then
+      log_message "[$backup_num] Backup for $title (directory) failed"
+      backup_warn+="- **[$backup_num]** $title\n"
+    else
+      log_message "[$backup_num] Backup for $title (directory) completed"
+      backup_message+="- **[$backup_num]** $title\n"
+    fi
+  elif [ "$source_type" == "file" ]; then
+    # Handle single file backup
+    if ! rclone copyto "$source" "$target$(basename "$source")" --verbose --log-file="$LOG_FILE"; then
+      log_message "[$backup_num] Backup for $title (file) failed"
+      backup_warn+="- **[$backup_num]** $title\n"
+    else
+      log_message "[$backup_num] Backup for $title (file) completed"
+      backup_message+="- **[$backup_num]** $title\n"
+    fi
+  fi
+done < <(jq -c '.[]' "$CONFIG_FILE")
+
+# Perform webhook report if requested
+if $WEBHOOK_REPORT; then
+  if [ -n "$backup_warn" ]; then
+    # Prep linebreak after backup_warn
+    description="$(echo -e "$backup_warn\n**$backup_num** entries processed in total.")"
+    
+    json_payload=$(jq -n \
+      --arg content "***[Backup] Warning @$(hostname)***: $PING_TARGET" \
+      --arg text "***[Backup] Warning @$(hostname)***: $PING_TARGET - **Error**: $(echo -e "$backup_warn")" \
+      --arg title "Failed Backups" \
+      --arg description "$description" \
+      '{content: $content, text: $text, embeds: [{title: $title, description: $description, color: 16732439}]}')
+  else
+    json_payload=$(jq -n \
+      --arg content "***[Backup] Info @$(hostname)***: __${CONFIG_FILE}__ backup finished, **$(($(echo -e "$backup_message" | wc -l)-1))** entries processed." \
+      '{content: $content, text: $content}')
+  fi
+
+  curl -H "Content-Type: application/json" -X POST -d "$json_payload" "$WEBHOOK_URL"
+  
+  # Workaround for Slacks "pretty print"
+  #curl -H "Content-Type: application/json" -X POST -d "$(echo "$json_payload" | sed 's/\*\{2,\}/*/g' | sed 's/__//g')" "$WEBHOOK_URL"
+fi
