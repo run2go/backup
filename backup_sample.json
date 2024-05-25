@@ -1,0 +1,25 @@
+[
+    {
+      "_comment": "Backup Testfile"
+    },
+    {
+      "title": "Files Backup",
+      "source": "/home/user/Documents/",
+      "target": "sftp:/Backups/Documents/"
+    },
+    {
+      "title": "Logs Backup",
+      "source": "/var/log/",
+      "target": "remote:/Backups/Directory/",
+      "exclude": [
+        "/excluded_sub_folder/",
+        "file.log"
+      ]
+    },
+    {
+      "_comment": "Copying from one remote source to another",
+      "title": "test3",
+      "source": "drive:/Backup/Test/",
+      "target": "sftp:/Server/Folder/"
+    }
+  ]
