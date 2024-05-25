@@ -3,7 +3,7 @@ Basic backup bash script with logging &amp; config file that uses rclone CLI<br>
 Supports webhook notifications & auto updates.
 
 ## Configuration
-The Discord Webhook and Ping (User) ID can be defined at the top of the shell script in the `# Configuration Parameters` section.
+The main config is available inside the shell script in the `# Configuration Parameters` section.
 
 | Parameter | Example | Explanation |
 | ------ | ------ | ------ |
