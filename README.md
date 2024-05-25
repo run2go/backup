@@ -1,5 +1,5 @@
 # Backup
-Basic backup bash script with logging &amp; config file that uses rclone CLI<br>
+Basic backup bash script with logging &amp; config file that uses rclone CLI.<br>
 Supports webhook notifications & auto updates.
 
 ## Configuration
